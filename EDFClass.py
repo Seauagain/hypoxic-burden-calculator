@@ -107,18 +107,17 @@ class EDFClass():
         csv_type: ruijin or nsrr format
         """
         try:
-            f = open(csv_dir, encoding="utf-8")
+            f = open(csv_path, encoding="utf-8")
             df = pd.read_csv(f)
         except:
             logging.info(f"找不到csv文件: {csv_path}")
-            continue
 
         if csv_type == "ruijin":
             date0, recordTime = self.start_record_date.split()
             df['EventConcept'] = df['类型']
             df['Start'] = df['时间'].str.split(':')
             df['Start'] = pd.DataFrame(
-                self.event_start_time(recordTime, x) for x in df['开始时间'])
+                self.event_start_time(recordTime, x) for x in df['Start'])
             df['End'] = df['Start'] + df['持续时间']
             return df
 
@@ -461,7 +460,7 @@ class EDFClass():
         #Flow阴影区的起始时间(int): start_time, end_time
         #寻找peaks的时间timeForPeaks(np.arr): start_time, end_time
         #坐标轴绘图的时间timeForPlots(np.arr): start_time-10
-        eventName = ""
+
         if show_event:  #读取csv，获得event信息
             csv_dir = os.path.join('.', self.patients_folder, patient_name,
                                    self.csv_name)
@@ -478,8 +477,10 @@ class EDFClass():
             #     self.event_start_time(recordTime, x) for x in df['开始时间'])
             Start = df['Start'].values
             row = np.where(abs(start_time - Start) < 1)[0]
-            eventName = self.EventNameENG(str(df.loc[row]['EventConcept']))
-        # print("eventname: ",eventName)
+            if row:
+                eventName = self.EventNameENG(str(df.loc[row]['EventConcept']))
+            else:
+                eventName = "NotEvent"
         self.plotChannels(SpO2BaseLine, eventName, patient_name, start_time,
                           end_time, left_idx, right_idx, show_event)
 
@@ -554,7 +555,7 @@ class EDFClass():
             df['氧减面积总和(%·s)'] = df['氧减面积'].sum()
 
             logging.info(f'index={patient_order:^3} patient {patient_name:^6}')
-            logging.info(f'record time: {recordTime}')
+            logging.info(f'record time: {self.start_record_date}')
             logging.info('氧减面积求和: {:.3f}(%·s)'.format(df['氧减面积'].sum()))
             logging.info('睡眠总时长: %s\n' %
                          self.stand_fmt_time(self.timeline[-1]))
