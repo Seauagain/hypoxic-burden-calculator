@@ -1,5 +1,5 @@
 import mne
-import os,re,sys
+import os, re, sys
 import logging
 import pandas as pd
 import numpy as np
@@ -8,10 +8,9 @@ import matplotlib
 from scipy.signal import find_peaks
 import time as ostime
 
-
-
 matplotlib.use('AGG')
 # matplotlib.rcParams.update({"figure.facecolor": "white"})
+
 
 class EDFClass():
 
@@ -25,50 +24,24 @@ class EDFClass():
         pass
 
     def basic_config(self,
-                        patients_folder,
-                        csv_name,
-                        pic_folder,
-                        SpO2_CSV_folder,
-                        lowerSpO2Line=40
-                        ):
-        
+                     patients_folder,
+                     csv_name,
+                     pic_folder,
+                     SpO2_CSV_folder,
+                     lowerSpO2Line=40):
+
         self.patients_folder = patients_folder
         self.csv_name = csv_name
-        self.pic_folder  = pic_folder
-        self.SpO2_CSV_folder  = SpO2_CSV_folder
+        self.pic_folder = pic_folder
+        self.SpO2_CSV_folder = SpO2_CSV_folder
         self.lowerSpO2Line = lowerSpO2Line
         import platform
-        if platform.system()=='Windows':
+        if platform.system() == 'Windows':
             self.timeMark = ostime.strftime("%Y-%m-%d %H-%M-%S")
         else:
-            self.timeMark = ostime.strftime("%Y-%m-%d %H:%M:%S") 
+            self.timeMark = ostime.strftime("%Y-%m-%d %H:%M:%S")
         os.makedirs(pic_folder, exist_ok=True)
         os.makedirs(SpO2_CSV_folder, exist_ok=True)
-
-
-
-    def parse_edf(self, edf_entrance, 
-                        channel_SpO2="SpO2", 
-                        channel_Flow="Flow Patient-1"
-                 ):
-        raw = self.load_edf(edf_entrance)
-        if raw:
-            self.load_ok = True
-        else:
-            self.load_ok = False
-        
-        ch_names = raw.ch_names
-        channel_names = [channel_SpO2, channel_Flow]
-
-        raw_selection = raw[channel_names, :]
-        self.timeline = raw_selection[1]
-        self.SpO2 = raw_selection[0][0].T
-        self.Flow = raw_selection[0][1].T
-        self.start_record_date = raw.info['meas_date'].strftime("%Y-%m-%d %X")  # 开始记录的时间,H:M:S
-        self.sfreq = raw.info['sfreq']
-        ## show raw_edf info: raw.info
-
-
 
     def setup_logging(self):
         ###move model.py to targetPath
@@ -89,16 +62,74 @@ class EDFClass():
         sh.setLevel(logging.DEBUG)
         sh.setFormatter(formatter)
         logger.addHandler(sh)
-
         return logger
 
+    def parse_edf(self, edf_entrance):
+        """
+        加载edf并解析基本信息
+        """
+        raw = self.load_edf(edf_entrance)
+        if raw:  #成功加载edf
+            self.load_ok = True
+        else:
+            self.load_ok = False
+
+        ch_names = raw.ch_names
+        SpO2_chs = ["SpO2", "SaO2"]
+        Flow_chs = ["Flow Patient-1", "NEW AIR", "AIRFLOW"]
+        for SpO2_ch in SpO2_chs:
+            if SpO2_ch in ch_names:
+                channel_SpO2 = SpO2_ch
+
+        for Flow_ch in Flow_chs:
+            if Flow_ch in ch_names:
+                channel_Flow = Flow_ch
+
+        channel_names = [channel_SpO2, channel_Flow]
+
+        raw_selection = raw[channel_names, :]
+        self.timeline = raw_selection[1]
+        self.SpO2 = raw_selection[0][0].T
+        self.Flow = raw_selection[0][1].T
+        self.start_record_date = raw.info['meas_date'].strftime(
+            "%Y-%m-%d %X")  # 开始记录的时间,H:M:S
+        self.sfreq = raw.info['sfreq']
+        ## show raw_edf info: raw.info
+
+    def parse_csv(self, csv_path, csv_type):
+        """
+        加载raw csv并进行简单预处理，处理后的csv应该具有以下几个关键词：
+        EventConcept
+        Start
+        End
+
+        csv_path: raw csv file path
+        csv_type: ruijin or nsrr format
+        """
+        try:
+            f = open(csv_dir, encoding="utf-8")
+            df = pd.read_csv(f)
+        except:
+            logging.info(f"找不到csv文件: {csv_path}")
+            continue
+
+        if csv_type == "ruijin":
+            date0, recordTime = self.start_record_date.split()
+            df['EventConcept'] = df['类型']
+            df['Start'] = df['时间'].str.split(':')
+            df['Start'] = pd.DataFrame(
+                self.event_start_time(recordTime, x) for x in df['开始时间'])
+            df['End'] = df['Start'] + df['持续时间']
+            return df
+
+        elif csv_type == "nsrr":
+            pass
 
     def stand_fmt_time(self, seconds):
         """seconds to H:M:S """
         m, s = divmod(seconds, 60)
         h, m = divmod(m, 60)
         return "%d:%02d:%02d" % (h, m, s)
-
 
     def time_transfer(self, time):
         """[H,M,S] 格式转换为秒数, 3600*H+60*M+S"""
@@ -108,7 +139,6 @@ class EDFClass():
             return total_sec
         else:
             return total_sec + 24 * 3600  #第二天，加上24hour
-
 
     def event_start_time(self, recordTime, eventTime):
         """
@@ -120,7 +150,6 @@ class EDFClass():
         recordTime = self.time_transfer(recordTime)
         eventTime = self.time_transfer(eventTime)
         return eventTime - recordTime
-
 
     def event_index(self, recordTime, eventTime, eventDuration, sfreq):
         """
@@ -136,7 +165,6 @@ class EDFClass():
         start_idx = (eventTime - recordTime) * sfreq
         end_idx = start_idx + eventDuration * sfreq
         return int(start_idx), int(end_idx)
-
 
     def find_nearest(self, peaks, eventEndTime):
         """
@@ -155,15 +183,22 @@ class EDFClass():
         except:
             next_peak = self.timeline.shape[0] - 1
         if self.timeline[peak] <= eventEndTime:
-            left_idx = self.find_end_if_flat_peaks(self.SpO2, peak, direction='right')
-            right_idx = self.find_end_if_flat_peaks(self.SpO2, next_peak, direction='left')
+            left_idx = self.find_end_if_flat_peaks(self.SpO2,
+                                                   peak,
+                                                   direction='right')
+            right_idx = self.find_end_if_flat_peaks(self.SpO2,
+                                                    next_peak,
+                                                    direction='left')
             return left_idx, right_idx
         else:
-            left_idx = self.find_end_if_flat_peaks(self.SpO2, back_peak, direction='right')
-            right_idx = self.find_end_if_flat_peaks(self.SpO2, peak, direction='left')
+            left_idx = self.find_end_if_flat_peaks(self.SpO2,
+                                                   back_peak,
+                                                   direction='right')
+            right_idx = self.find_end_if_flat_peaks(self.SpO2,
+                                                    peak,
+                                                    direction='left')
             return left_idx, right_idx
             # return array[idx-1],array[idx]#need idx
-
 
     def find_end_if_flat_peaks(self, array, idx, direction):
         """
@@ -188,7 +223,7 @@ class EDFClass():
                 raise Exception("Wrong direction, should be 'left' or 'right'")
 
         return idx
-    
+
     def getSpO2BaseLine(self, endTimeIndex):
         """
         return: SpO2下降的基线，定义为事件结束前100s内SpO2的最大值
@@ -198,7 +233,6 @@ class EDFClass():
         end_idx = endTimeIndex
         start_idx = max(0, int(end_idx - 100 * self.sfreq))
         return np.max(self.SpO2[start_idx:end_idx + 1])
-
 
     def getSpO2Area(self, start_idx, end_idx, SpO2BaseLine):
         """氧减面积"""
@@ -220,26 +254,25 @@ class EDFClass():
         """
         subfolder = os.path.join(self.patients_folder, patient_name)
         for home, dir, files in os.walk(subfolder):
-                for file in files:
-                    filename = re.findall('(.*?)\[001\].edf', file)
-                    if filename:
-                        FilesName = filename[0]
-                        break
-                    else:
-                        FilesName = None
-                edffilesNum = 0
-                # print(FilesName)
-                for file in files:
-                    edffiles = re.search('%s\[(.*?)\].edf' % FilesName, file)
-                    if edffiles:
-                        edffilesNum += 1
-                # print(edffilesNum)
+            for file in files:
+                filename = re.findall('(.*?)\[001\].edf', file)
+                if filename:
+                    FilesName = filename[0]
+                    break
+                else:
+                    FilesName = None
+            edffilesNum = 0
+            # print(FilesName)
+            for file in files:
+                edffiles = re.search('%s\[(.*?)\].edf' % FilesName, file)
+                if edffiles:
+                    edffilesNum += 1
+            # print(edffilesNum)
         # print("patient info: ",patient_name, FilesName)
         if not FilesName:
             ValueError(f"{patient_name}文件夹下没有edf")
         patientInfo = [patient_name, FilesName, edffilesNum]
         return patientInfo
-
 
     def edf_file_info_list(self):
         """
@@ -251,9 +284,8 @@ class EDFClass():
         for folder in os.listdir(patient_dir):
             # print("folder: ", folder)
             patientInfo = self.edf_file_info(folder)
-            infoList.append(patientInfo) 
+            infoList.append(patientInfo)
         return infoList
-
 
     # def patient_name_dict(self):
     #     """
@@ -264,7 +296,6 @@ class EDFClass():
     #     name2index = {name[0]: idx for idx, name in enumerate(infoList)}
     #     return name2index
 
-
     def load_edf(self, edf_enrance):
         """ 
         加载edf，有3种输入方式:
@@ -272,13 +303,11 @@ class EDFClass():
         2. 给定包含多个edf files的文件夹名（Ruijin）
         3. 给定patients_folderer和patient_order（Ruijin）
         """
-        if isinstance(edf_enrance, str) and edf_enrance[-4:]=='.edf':
-            edf_path =  edf_enrance
-            raw = mne.io.read_raw_edf(edf_path,
-                                      preload=False,
-                                      verbose='ERROR')
+        if isinstance(edf_enrance, str) and edf_enrance[-4:] == '.edf':
+            edf_path = edf_enrance
+            raw = mne.io.read_raw_edf(edf_path, preload=False, verbose='ERROR')
             return raw
-        
+
         #### Ruijin format data
         # patient, FilesName, edffilesNum = '黄亚声','00000033-AN1PD2016777',9
         elif isinstance(edf_enrance, str):
@@ -295,41 +324,41 @@ class EDFClass():
         rawList = []
         for i in range(1, edffilesNum + 1):
             if i <= 9:
-                raw_file_path = os.path.join('.', self.patients_folder, patient,
-                                            f'{FilesName}[00{i}].edf')
+                raw_file_path = os.path.join('.', self.patients_folder,
+                                             patient,
+                                             f'{FilesName}[00{i}].edf')
             else:
-                raw_file_path = os.path.join('.', self.patients_folder, patient,
-                                            f'{FilesName}[0{i}].edf')
+                raw_file_path = os.path.join('.', self.patients_folder,
+                                             patient, f'{FilesName}[0{i}].edf')
             # raw_file_path = os.path.join('陈爱华/00000222-AN1PD2015224[00%s].edf' % i)
             if os.path.exists(raw_file_path):
                 raw = mne.io.read_raw_edf(raw_file_path,
-                                        preload=False,
-                                        verbose='ERROR')
+                                          preload=False,
+                                          verbose='ERROR')
                 rawList.append(raw)
         return mne.io.concatenate_raws(rawList)
 
-
-
     def EventNameENG(self, event_text):
-        """事件，中译英"""
-        result = re.search('(.*?)低通气.*?', event_text)
-        if result: return 'Hypo'
-        result = re.search('(.*?)呼吸暂停.*?', event_text)
-        if result: return 'Apnea'
+        """事件翻译为英文缩写"""
+        result = re.search('(.*?)低通气|Hypo.*?', event_text)
+        if result:
+            return 'Hypo'
+        result = re.search('(.*?)呼吸暂停|Apnea.*?', event_text)
+        if result:
+            return 'Apnea'
         return event_text
-
 
     def checkEventName(self, text):
         """给出text，检查事件名是否包含低通气和呼吸暂停"""
-        Hypo = re.search('(.*?)低通气.*?', text)
-        Apnea = re.search('(.*?)呼吸暂停.*?', text)
+        Hypo = re.search('(.*?)低通气|Hypo.*?', text)
+        Apnea = re.search('(.*?)呼吸暂停|Apnea.*?', text)
         if Hypo or Apnea:
             return True
+        else:
+            return False
 
-
-    def plotChannels(self, SpO2BaseLine, eventName, 
-                    patient_name, start_time, end_time, 
-                    left_idx, right_idx, show_event):
+    def plotChannels(self, SpO2BaseLine, eventName, patient_name, start_time,
+                     end_time, left_idx, right_idx, show_event):
         #time, Flow, SpO2, sfreq,
         """
         绘制带有事件信息的channel signal
@@ -341,52 +370,69 @@ class EDFClass():
 
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
         ax1.plot(self.timeline[idx1:idx2], self.Flow[idx1:idx2], color='blue')
-      
+
         ax1.set_ylabel('Flow', color='blue', fontweight='bold')
         #####
         ax2.plot(self.timeline[idx1:idx2], self.SpO2[idx1:idx2], color='red')
-        
+
         ax2.set_xlabel('time(s)', fontweight='bold')
         ax2.set_ylabel('SpO2(%)', color='red', fontweight='bold')
         ax2.tick_params(axis='y', labelcolor='tab:red')
-        
-        if show_event:# 是否展示事件相关的文字信息
+
+        if show_event:  # 是否展示事件相关的文字信息
 
             ax1.fill_between(x=[start_time, end_time],
-                        y1=np.min(self.Flow[idx1:idx2]),
-                        y2=np.max(self.Flow[idx1:idx2]),
-                        color='gray',
-                        alpha=0.4)
+                             y1=np.min(self.Flow[idx1:idx2]),
+                             y2=np.max(self.Flow[idx1:idx2]),
+                             color='gray',
+                             alpha=0.4)
             # ax1.vlines
             ax1.text(x=start_time * 1 + 0.2 * (end_time - start_time),
-                    y=np.max(self.Flow[idx1:idx2]) * 0.9,
-                    s=eventName,
-                    fontweight='bold')
+                     y=np.max(self.Flow[idx1:idx2]) * 0.9,
+                     s=eventName,
+                     fontweight='bold')
             ax2.fill_between(self.timeline[left_idx:right_idx],
-                        y1=self.SpO2[left_idx:right_idx],
-                        y2=SpO2BaseLine,
-                        color='gray',
-                        alpha=0.8)
-            ax2.plot(self.timeline[left_idx],  self.SpO2[left_idx], '>', markersize=5, color='k')
-            ax2.plot(self.timeline[right_idx], self.SpO2[right_idx], '<', markersize=5, color='k')
+                             y1=self.SpO2[left_idx:right_idx],
+                             y2=SpO2BaseLine,
+                             color='gray',
+                             alpha=0.8)
+            ax2.plot(self.timeline[left_idx],
+                     self.SpO2[left_idx],
+                     '>',
+                     markersize=5,
+                     color='k')
+            ax2.plot(self.timeline[right_idx],
+                     self.SpO2[right_idx],
+                     '<',
+                     markersize=5,
+                     color='k')
 
-        
         plt.subplots_adjust(wspace=0, hspace=0)
-        pic_dir = os.path.join(
-            '.', self.pic_folder,
-            f'{patient_name}startTime={start_time}_endTime={end_time}.png')
+
+        ##根据patient_name是病人名称还是edf_path自定义图片路径
+        if isinstance(patient_name, str) and patient_name[-4:] == ".edf":
+            filename = os.path.split(patient_name)[-1]
+            file = filename[:-4]
+            pic_dir = os.path.join(
+                '.', self.pic_folder,
+                f'{file}_startTime={start_time}_endTime={end_time}.png')
+        else:
+            pic_dir = os.path.join(
+                '.', self.pic_folder,
+                f'{patient_name}startTime={start_time}_endTime={end_time}.png')
         plt.savefig(pic_dir, dpi=200)
         print(f'event pic saved in {pic_dir}')
         plt.close()
 
-
-    def plotPatientSpO2(self, patient_name, start2end_time_list, show_event=True):
+    def plotPatientSpO2(self,
+                        patient_name,
+                        start2end_time_list,
+                        show_event=True):
         """
         可视化SpO2和Flow的信号图
         patient_name: 三种输入方式edf_path/patient_name/patient_order
         show_event: 绘图时是否展示与事件相关的信息，默认True
         """
-        
 
         # patient_names_dict = self.patient_name_list()
         # patient_idx = patient_names_dict[patient_name]
@@ -394,7 +440,7 @@ class EDFClass():
         # startDate = raw.info['meas_date'].strftime("%Y-%m-%d %X")  # 开始记录的时间,H:M:S
         # sfreq = raw.info['sfreq']
         # channel_names = ['SpO2', 'Flow Patient-1']
-        
+
         self.parse_edf(patient_name)
         start_time, end_time = start2end_time_list
         start_time = int(start_time)
@@ -415,28 +461,27 @@ class EDFClass():
         #Flow阴影区的起始时间(int): start_time, end_time
         #寻找peaks的时间timeForPeaks(np.arr): start_time, end_time
         #坐标轴绘图的时间timeForPlots(np.arr): start_time-10
-        if show_event: #读取csv，获得event信息
-            csv_dir = os.path.join('.', self.patients_folder, patient_name, self.csv_name)
-            f = open(csv_dir, encoding="utf-8")
-            df = pd.read_csv(f)
+        eventName = ""
+        if show_event:  #读取csv，获得event信息
+            csv_dir = os.path.join('.', self.patients_folder, patient_name,
+                                   self.csv_name)
+            df = self.parse_csv(csv_dir, csv_type="ruijin")
+            # f = open(csv_dir, encoding="utf-8")
+            # df = pd.read_csv(f)
 
             ####
             # startDate = raw.info['meas_date'].strftime(
             #     "%Y-%m-%d %X")  # 开始记录的时间,H:M:S，win10路径不能出现冒号
-            date0, recordTime = self.start_record_date.split()
-            df['开始时间'] = df['时间'].str.split(':')
-            df['开始时间'] = pd.DataFrame(
-                self.event_start_time(recordTime, x) for x in df['开始时间'])
-            Start = df['开始时间'].values
+            # date0, recordTime = self.start_record_date.split()
+            # df['开始时间'] = df['时间'].str.split(':')
+            # df['开始时间'] = pd.DataFrame(
+            #     self.event_start_time(recordTime, x) for x in df['开始时间'])
+            Start = df['Start'].values
             row = np.where(abs(start_time - Start) < 1)[0]
-            eventName = self.EventNameENG(str(df.loc[row]['类型']))
+            eventName = self.EventNameENG(str(df.loc[row]['EventConcept']))
         # print("eventname: ",eventName)
-        self.plotChannels(SpO2BaseLine, eventName,
-                    patient_name, start_time, end_time, 
-                    left_idx, right_idx,show_event)
-
-
-
+        self.plotChannels(SpO2BaseLine, eventName, patient_name, start_time,
+                          end_time, left_idx, right_idx, show_event)
 
     def computeSpO2(self, mode='all'):
         ##计算SpO2，默认计算所有病人
@@ -445,10 +490,10 @@ class EDFClass():
         self.setup_logging()
         #更新病人名单
         infoList = self.edf_file_info_list()
-        patient_names_list = [info[0] for info in infoList] # all patients
+        patient_names_list = [info[0] for info in infoList]  # all patients
         # patient_names_dict = self.patient_name_list()
         if mode == 'all':
-            patient_names_select =  patient_names_list
+            patient_names_select = patient_names_list
             # patient_names_list = list(self.patient_name_list().values())
         else:
             patient_names_select = [mode]
@@ -460,21 +505,27 @@ class EDFClass():
             self.parse_edf(patient_name)
             ###TODO：判断异常情况
             if not self.load_ok:
-                logging.info(f'index={patient_order:^3} patient {patient_name:^6}没有EDF文件\n')
-                continue
-            csv_dir = os.path.join('.', self.patients_folder, patient_name, self.csv_name)
-            try:
-                f = open(csv_dir, encoding="utf-8")
-                df = pd.read_csv(f)
-            except:
                 logging.info(
-                    f"index={patient_order:^3} patient {patient_name:^6}没有<{self.csv_name}>文件\n")
+                    f'index={patient_order:^3} patient {patient_name:^6}没有EDF文件\n'
+                )
                 continue
-            date0, recordTime = self.start_record_date.split()
-            df['开始时间'] = df['时间'].str.split(':')
-            df['开始时间'] = pd.DataFrame(
-                self.event_start_time(recordTime, x) for x in df['开始时间'])
-            df['结束时间'] = df['开始时间'] + df['持续时间']
+
+            csv_dir = os.path.join('.', self.patients_folder, patient_name,
+                                   self.csv_name)
+            df = self.parse_csv(csv_dir, csv_type="ruijin")
+            # try:
+            #     f = open(csv_dir, encoding="utf-8")
+            #     df = pd.read_csv(f)
+            # except:
+            #     logging.info(
+            #         f"index={patient_order:^3} pati ent {patient_name:^6}没有<{self.csv_name}>文件\n"
+            #     )
+            #     continue
+            # date0, recordTime = self.start_record_date.split()
+            # df['开始时间'] = df['时间'].str.split(':')
+            # df['开始时间'] = pd.DataFrame(
+            #     self.event_start_time(recordTime, x) for x in df['开始时间'])
+            # df['结束时间'] = df['开始时间'] + df['持续时间']
 
             SpO2Area = []
 
@@ -484,15 +535,15 @@ class EDFClass():
             # Flow = raw_selection[0][1].T
 
             for row in range(df.shape[0]):
-                eventName = df.loc[row]['类型']
+                eventName = df.loc[row]['EventConcept']
                 if self.checkEventName(eventName):
-                    eventEndTime = df.loc[row]['结束时间']
+                    eventEndTime = df.loc[row]['End']
                     # if eventEndTime>time[-1] or eventEndTime<time[0]:
                     #       SpO2Area.append(-0.01)
                     # else:
                     peaks, _ = find_peaks(self.SpO2, height=0)  #peaks指标
-                    left_idx, right_idx = self.find_nearest(peaks,
-                                                    eventEndTime)  #End是时间
+                    left_idx, right_idx = self.find_nearest(
+                        peaks, eventEndTime)  #End是时间
                     SpO2BaseLine = self.getSpO2BaseLine(right_idx)
                     Area = self.getSpO2Area(left_idx, right_idx, SpO2BaseLine)
                 else:
@@ -505,16 +556,17 @@ class EDFClass():
             logging.info(f'index={patient_order:^3} patient {patient_name:^6}')
             logging.info(f'record time: {recordTime}')
             logging.info('氧减面积求和: {:.3f}(%·s)'.format(df['氧减面积'].sum()))
-            logging.info('睡眠总时长: %s\n' % self.stand_fmt_time(self.timeline[-1]))
+            logging.info('睡眠总时长: %s\n' %
+                         self.stand_fmt_time(self.timeline[-1]))
 
-            df.sort_values(by='开始时间', inplace=True)
+            df.sort_values(by='Start', inplace=True)
             #分别保存csv在对应patient文件夹和单独的SpO2文件夹
             csv_to_patient = os.path.join(self.patients_folder, patient_name,
-                                        f'{patient_name}desaturation.csv')
+                                          f'{patient_name}_desaturation.csv')
             df.to_csv(csv_to_patient, encoding='utf_8_sig')
-            csv_to_spo2 = os.path.join(self.SpO2_CSV_folder, f'{patient_name}desaturation.csv')
+            csv_to_spo2 = os.path.join(self.SpO2_CSV_folder,
+                                       f'{patient_name}_desaturation.csv')
             df.to_csv(csv_to_spo2, encoding='utf_8_sig')
-
 
             # my_annot = mne.Annotations(
             #     onset=df['开始时间'].tolist(),  # in seconds
@@ -526,9 +578,6 @@ class EDFClass():
             # # Duration=raw.annotations.duration
             # # End=Start+Duration
 
-
-            
-
     def overallCSV(self):
         ##汇总所有patient的计算结果保存到overall_timeMark.csv
         subfolder = os.path.join('.', self.SpO2_CSV_folder)
@@ -536,7 +585,7 @@ class EDFClass():
         for home, dir, files in os.walk(subfolder):
             for file in files:
                 # print(home, dir, file)
-                filename = re.findall('(.*?)desaturation.csv', file)
+                filename = re.findall('(.*?)_desaturation.csv', file)
                 if filename:
                     tmpRes = {}
                     patient_name = filename[0]
@@ -548,13 +597,11 @@ class EDFClass():
                 else:
                     continue
         if not resultList:
-            print('没有找到desaturation.csv文件')
+            print('没有找到*desaturation.csv文件')
             return
 
         newdf = pd.DataFrame(resultList)
         resDir = os.path.join('.', self.SpO2_CSV_folder,
-                            f'[0]汇总{len(resultList)}人计算结果.csv')
+                              f'[0]汇总{len(resultList)}人计算结果.csv')
         newdf.to_csv(resDir, encoding="utf_8_sig", index=True)
         print(f'final overall-result saved in {resDir}')
-
-
