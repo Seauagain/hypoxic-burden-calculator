@@ -415,23 +415,22 @@ class EDFClass():
         #Flow阴影区的起始时间(int): start_time, end_time
         #寻找peaks的时间timeForPeaks(np.arr): start_time, end_time
         #坐标轴绘图的时间timeForPlots(np.arr): start_time-10
+        if show_event: #读取csv，获得event信息
+            csv_dir = os.path.join('.', self.patients_folder, patient_name, self.csv_name)
+            f = open(csv_dir, encoding="utf-8")
+            df = pd.read_csv(f)
 
-        csv_dir = os.path.join('.', self.patients_folder, patient_name, self.csv_name)
-        f = open(csv_dir, encoding="utf-8")
-        df = pd.read_csv(f)
-
-        ####
-        # startDate = raw.info['meas_date'].strftime(
-        #     "%Y-%m-%d %X")  # 开始记录的时间,H:M:S，win10路径不能出现冒号
-        date0, recordTime = self.start_record_date.split()
-        df['开始时间'] = df['时间'].str.split(':')
-        df['开始时间'] = pd.DataFrame(
-            self.event_start_time(recordTime, x) for x in df['开始时间'])
-        Start = df['开始时间'].values
-        row = np.where(abs(start_time - Start) < 1)[0]
-        eventName = self.EventNameENG(str(df.loc[row]['类型']))
+            ####
+            # startDate = raw.info['meas_date'].strftime(
+            #     "%Y-%m-%d %X")  # 开始记录的时间,H:M:S，win10路径不能出现冒号
+            date0, recordTime = self.start_record_date.split()
+            df['开始时间'] = df['时间'].str.split(':')
+            df['开始时间'] = pd.DataFrame(
+                self.event_start_time(recordTime, x) for x in df['开始时间'])
+            Start = df['开始时间'].values
+            row = np.where(abs(start_time - Start) < 1)[0]
+            eventName = self.EventNameENG(str(df.loc[row]['类型']))
         # print("eventname: ",eventName)
-        ##
         self.plotChannels(SpO2BaseLine, eventName,
                     patient_name, start_time, end_time, 
                     left_idx, right_idx,show_event)
