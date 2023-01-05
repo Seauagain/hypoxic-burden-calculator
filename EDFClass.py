@@ -176,7 +176,7 @@ class EDFClass():
         """
         subfolder = os.path.join(self.patients_folder, patient_name)
         for home, dir, files in os.walk(subfolder):
-            for file in files.sort():
+            for file in sorted(files):
                 filename = re.findall('(.*?)\[001\].edf', file)
                 if filename:
                     FilesName = filename[0]
@@ -203,16 +203,11 @@ class EDFClass():
         """
         infoList = []
         patient_dir = os.path.join('.', self.patients_folder)
-        for folder in os.listdir(patient_dir).sort():
+        for folder in sorted(os.listdir(patient_dir)):
             # print("folder: ", folder)
             patientInfo = self.edf_file_info(folder)
             infoList.append(patientInfo)
         return infoList
-
-    def nssr_edf_list(self):
-        """"""
-        self.xml_files_path = xml_files_path
-        self.edf_files_path = edf_files_path
 
     def load_edf(self, edf_enrance):
         """ 
@@ -618,7 +613,7 @@ class EDFClass():
         subfolder = os.path.join('.', self.SpO2_CSV_folder)
         resultList = []
         for home, dir, files in os.walk(subfolder):
-            for file in files.sort():
+            for file in sorted(files):
                 # print(home, dir, file)
                 filename = re.findall('(.*?)_desaturation.csv', file)
                 if filename:

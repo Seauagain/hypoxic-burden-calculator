@@ -15,9 +15,11 @@ def main():
 
     ##TODO: spo2计算模式，默认计算所有病人。
     ##patient_name: 'all':计算所有病人；'武茵': 计算某个指定的病人
+
+    data_type = 'ruijin'  #数据格式 ruijin
     # patient_name = '白川'
     patient_name = 'all'
-    EDF.computeSpO2(patient_name)  #计算SpO2，不需要重复计算SpO2就把这句注释掉
+    # EDF.computeSpO2(patient_name, data_type)  #计算SpO2，不需要重复计算SpO2就把这句注释掉
     EDF.overallCSV()
 
     ##TODO: 可视化病人的事件，图片保存在SpO2Pic
