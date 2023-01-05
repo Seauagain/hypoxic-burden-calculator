@@ -43,7 +43,7 @@ class EDFClass():
             self.timeMark = ostime.strftime("%Y-%m-%d %H:%M:%S")
         os.makedirs(pic_folder, exist_ok=True)
         os.makedirs(SpO2_CSV_folder, exist_ok=True)
-    
+
     def nssr_config(self, xml_files_path, edf_files_path):
         """NSRR数据的xml和edf主目录"""
         self.xml_files_path = xml_files_path
@@ -125,10 +125,10 @@ class EDFClass():
             df['Start'] = pd.DataFrame(
                 self.event_start_time(recordTime, x) for x in df['Start'])
             df['End'] = df['Start'] + df['持续时间']
-    
+
         elif data_type == "nsrr":
             df = self._xml2csv(csv_xml_path)
-        
+
         return df
 
     def _xml2csv(self, xml_path):
@@ -169,7 +169,6 @@ class EDFClass():
         df["End"] = df["Start"] + df["Duration"]
         return df
 
-
     def edf_file_info(self, patient_name):
         """
         patient_name: 包含多个edf files的文件夹名
@@ -209,7 +208,7 @@ class EDFClass():
             patientInfo = self.edf_file_info(folder)
             infoList.append(patientInfo)
         return infoList
-    
+
     def nssr_edf_list(self):
         """"""
         self.xml_files_path = xml_files_path
@@ -256,8 +255,6 @@ class EDFClass():
                                           verbose='ERROR')
                 rawList.append(raw)
         return mne.io.concatenate_raws(rawList)
-
-
 
     def stand_fmt_time(self, seconds):
         """seconds to H:M:S """
@@ -381,7 +378,6 @@ class EDFClass():
         else:
             return Area
 
-    
     def EventNameENG(self, event_text):
         """事件翻译为英文缩写"""
         result = re.search('(.*?)低通气|Hypo.*?', event_text)
@@ -529,7 +525,6 @@ class EDFClass():
         self.plotChannels(SpO2BaseLine, eventName, patient_name, start_time,
                           end_time, left_idx, right_idx, show_event)
 
-
     def _computeSpO2(self, df):
         """基于预处理后的df, 逐行计算SpO2，更新df"""
         SpO2Area = []
@@ -541,8 +536,8 @@ class EDFClass():
                 #       SpO2Area.append(-0.01)
                 # else:
                 peaks, _ = find_peaks(self.SpO2, height=0)  #peaks指标
-                left_idx, right_idx = self.find_nearest(
-                    peaks, eventEndTime)  #End是时间
+                left_idx, right_idx = self.find_nearest(peaks,
+                                                        eventEndTime)  #End是时间
                 SpO2BaseLine = self.getSpO2BaseLine(right_idx)
                 Area = self.getSpO2Area(left_idx, right_idx, SpO2BaseLine)
             else:
@@ -554,8 +549,7 @@ class EDFClass():
         df.sort_values(by='Start', inplace=True)
         return df
 
-
-    def computeSpO2(self, mode,  data_type):
+    def computeSpO2(self, mode, data_type):
         ##计算SpO2，默认计算所有病人
         ##可以指定计算某个病人
         #初始化log
@@ -584,32 +578,30 @@ class EDFClass():
                     continue
 
                 csv_dir = os.path.join('.', self.patients_folder, patient_name,
-                                    self.csv_name)
+                                       self.csv_name)
                 df = self.parse_csv(csv_dir, data_type)
 
                 df_update = self._computeSpO2(df)
 
-                logging.info(f'index={patient_order:^3} patient {patient_name:^6}')
+                logging.info(
+                    f'index={patient_order:^3} patient {patient_name:^6}')
                 logging.info(f'record time: {self.start_record_date}')
-                logging.info('氧减面积求和: {:.3f}(%·s)'.format(df_update['氧减面积'].sum()))
+                logging.info('氧减面积求和: {:.3f}(%·s)'.format(
+                    df_update['氧减面积'].sum()))
                 logging.info('睡眠总时长: %s\n' %
-                            self.stand_fmt_time(self.timeline[-1]))
-                
+                             self.stand_fmt_time(self.timeline[-1]))
+
                 #分别保存csv在对应patient文件夹和单独的SpO2文件夹
-                csv_to_patient = os.path.join(self.patients_folder, patient_name,
-                                            f'{patient_name}_desaturation.csv')
+                csv_to_patient = os.path.join(
+                    self.patients_folder, patient_name,
+                    f'{patient_name}_desaturation.csv')
                 df_update.to_csv(csv_to_patient, encoding='utf_8_sig')
                 csv_to_spo2 = os.path.join(self.SpO2_CSV_folder,
-                                        f'{patient_name}_desaturation.csv')
+                                           f'{patient_name}_desaturation.csv')
                 df_update.to_csv(csv_to_spo2, encoding='utf_8_sig')
 
-        if data_type=="nssr":
-
-
-
-
-
-
+        if data_type == "nssr":
+            pass
 
             # my_annot = mne.Annotations(
             #     onset=df['开始时间'].tolist(),  # in seconds
