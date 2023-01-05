@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 from scipy.signal import find_peaks
-import time as ostime
+import time
 
 matplotlib.use('AGG')
 # matplotlib.rcParams.update({"figure.facecolor": "white"})
@@ -38,19 +38,18 @@ class EDFClass():
         self.lowerSpO2Line = lowerSpO2Line
         import platform
         if platform.system() == 'Windows':
-            self.timeMark = ostime.strftime("%Y-%m-%d %H-%M-%S")
+            self.timeMark = time.strftime("%Y-%m-%d %H-%M-%S")
         else:
-            self.timeMark = ostime.strftime("%Y-%m-%d %H:%M:%S")
+            self.timeMark = time.strftime("%Y-%m-%d %H:%M:%S")
         os.makedirs(pic_folder, exist_ok=True)
         os.makedirs(SpO2_CSV_folder, exist_ok=True)
 
-    def nssr_config(self, xml_files_path, edf_files_path):
+    def nsrr_config(self, xml_files_home, edf_files_home):
         """NSRR数据的xml和edf主目录"""
-        self.xml_files_path = xml_files_path
-        self.edf_files_path = edf_files_path
+        self.xml_files_home = xml_files_home
+        self.edf_files_home = edf_files_home
 
     def setup_logging(self):
-        ###move model.py to targetPath
         log_file = os.path.join('.', self.SpO2_CSV_folder,
                                 f'desaturation日志_{self.timeMark}.txt')
         logger = logging.getLogger()
@@ -133,9 +132,13 @@ class EDFClass():
 
     def _xml2csv(self, xml_path):
         """
-        For NSSR: xml格式的标注信息转换为csv
+        For nsrr: xml格式的标注信息转换为csv
         """
-        tree = ET.parse(xml_path)
+        try:
+            tree = ET.parse(xml_path)
+        except:
+            raise ValueError(f"{xml_path} not found")
+
         root = tree.getroot()
         nodes_num = len(root[2])
         # nodes_num = 10
@@ -295,14 +298,18 @@ class EDFClass():
     def find_nearest(self, peaks, eventEndTime):
         """
         given an value, return the nearest neighbor in an array s.t. [value_left<=value<=value_right]
-        return value_left,value_right
-        array: shuld be time
+        
+        peaks: the index of timeline
         eventEndTime: should be a sigle value
+
+        return value_left,value_right
         """
         time_select = self.timeline[peaks]
         idx_select = (np.abs(time_select - eventEndTime)).argmin()
         peak = peaks[idx_select]  # peak是对time的idx
         back_peak = peaks[idx_select - 1]
+        if idx_select == 0:  #第一个peak，那么back_peak从0开始
+            back_peak = 0
         # next_peak=peaks[np.min(idx_select+1,peaks.shape[0]-1)]
         try:
             next_peak = peaks[idx_select + 1]
@@ -462,6 +469,7 @@ class EDFClass():
     def plotPatientSpO2(self,
                         patient_name,
                         start2end_time_list,
+                        data_type,
                         show_event=True):
         """
         可视化SpO2和Flow的信号图
@@ -496,11 +504,19 @@ class EDFClass():
         #Flow阴影区的起始时间(int): start_time, end_time
         #寻找peaks的时间timeForPeaks(np.arr): start_time, end_time
         #坐标轴绘图的时间timeForPlots(np.arr): start_time-10
-
+        eventName = "NotEvent"
         if show_event:  #读取csv，获得event信息
-            csv_dir = os.path.join('.', self.patients_folder, patient_name,
-                                   self.csv_name)
-            df = self.parse_csv(csv_dir, data_type="ruijin")
+            if data_type == "ruijin":
+                csv_dir = os.path.join('.', self.patients_folder, patient_name,
+                                       self.csv_name)
+                df = self.parse_csv(csv_dir, data_type)
+            if data_type == "nsrr":
+                edf_filename = os.path.split(patient_name)[-1]
+                edf_prefix = edf_filename[:-4]
+                xml_filename = edf_prefix + "-nsrr.xml"
+                xml_file_path = os.path.join(self.xml_files_home, xml_filename)
+                df = self.parse_csv(xml_file_path, data_type)
+
             # f = open(csv_dir, encoding="utf-8")
             # df = pd.read_csv(f)
 
@@ -531,8 +547,11 @@ class EDFClass():
                 #       SpO2Area.append(-0.01)
                 # else:
                 peaks, _ = find_peaks(self.SpO2, height=0)  #peaks指标
-                left_idx, right_idx = self.find_nearest(peaks,
-                                                        eventEndTime)  #End是时间
+
+                left_idx, right_idx = self.find_nearest(peaks, eventEndTime)
+                # End是时间
+                # print("endtime: ", eventEndTime)
+                # print(f"left:{left_idx} right:{right_idx}")
                 SpO2BaseLine = self.getSpO2BaseLine(right_idx)
                 Area = self.getSpO2Area(left_idx, right_idx, SpO2BaseLine)
             else:
@@ -544,7 +563,7 @@ class EDFClass():
         df.sort_values(by='Start', inplace=True)
         return df
 
-    def computeSpO2(self, mode, data_type):
+    def computeSpO2(self, pattern, data_type):
         ##计算SpO2，默认计算所有病人
         ##可以指定计算某个病人
         #初始化log
@@ -554,11 +573,11 @@ class EDFClass():
             infoList = self.edf_file_info_list()
             patient_names_list = [info[0] for info in infoList]  # all patients
             # patient_names_dict = self.patient_name_list()
-            if mode == 'all':
+            if pattern == 'all':
                 patient_names_select = patient_names_list
                 # patient_names_list = list(self.patient_name_list().values())
             else:
-                patient_names_select = [mode]
+                patient_names_select = [pattern]
             toal_num = len(patient_names_list)
             logging.info(f'需要计算的总人数={toal_num:^3}\n')
 
@@ -595,8 +614,42 @@ class EDFClass():
                                            f'{patient_name}_desaturation.csv')
                 df_update.to_csv(csv_to_spo2, encoding='utf_8_sig')
 
-        if data_type == "nssr":
-            pass
+        if data_type == "nsrr":
+
+            if pattern == "all":
+                edfs_list = sorted(os.listdir(self.edf_files_home))
+            else:
+                edfs_list = sorted([pattern])
+
+            toal_num = len(edfs_list)
+            logging.info(f'需要计算的总人数={toal_num:^3}\n')
+
+            for idx, edf_filename in enumerate(edfs_list):
+                edf_prefix = edf_filename[:-4]
+                xml_filename = edf_prefix + "-nsrr.xml"
+                edf_file_path = os.path.join(self.edf_files_home, edf_filename)
+                xml_file_path = os.path.join(self.xml_files_home, xml_filename)
+                self.parse_edf(edf_file_path)
+                df = self.parse_csv(xml_file_path, data_type)
+                if not self.load_ok:
+                    logging.info(f"{edf_file_path} file not found\n")
+                print(f"edf: {edf_filename}")
+                df_update = self._computeSpO2(df)
+
+                logging.info(f'index: {idx:^3} edf: {edf_prefix:^8}')
+                logging.info(f'record time: {self.start_record_date}')
+                logging.info('氧减面积求和: {:.3f}(%·s)'.format(
+                    df_update['氧减面积'].sum()))
+                logging.info('睡眠总时长: %s\n' %
+                             self.stand_fmt_time(self.timeline[-1]))
+
+                ###保存csv
+                subfolder = edf_prefix[:5]  # shhs1 shhs2
+                nsrr_csv_home = os.path.join(self.SpO2_CSV_folder, subfolder)
+                os.makedirs(nsrr_csv_home, exist_ok=True)
+                csv_to_spo2 = os.path.join(nsrr_csv_home,
+                                           f'{edf_prefix}_desaturation.csv')
+                df_update.to_csv(csv_to_spo2, encoding='utf_8_sig')
 
             # my_annot = mne.Annotations(
             #     onset=df['开始时间'].tolist(),  # in seconds
