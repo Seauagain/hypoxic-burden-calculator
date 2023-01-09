@@ -26,20 +26,31 @@ def main():
     data_type = 'nsrr'
     # patient_name = '白川'
     patient_name = 'all'
+    # patient_name = "shhs1-200087.edf"
     EDF.computeSpO2(patient_name, data_type)  #计算SpO2，不需要重复计算SpO2就把这句注释掉
-    # EDF.overallCSV()
+
+    xml_files_home = os.path.join('..', 'polysomnography',
+                                  'annotations-events-nsrr', 'shhs2')
+    edf_files_home = os.path.join('..', 'polysomnography', 'edfs', 'shhs2')
+    EDF.computeSpO2(patient_name, data_type)  #计算SpO2，不需要重复计算SpO2就把这句注释掉
+
+    EDF.add_detail_result()
+    EDF.overallCSV(data_type)
+    # Adding the detail result of the patient to the overall csv file.
 
     ##TODO: 可视化病人的事件，图片保存在SpO2Pic
     ##For instance: 打开周波.desaturation.csv，最后几列分别是事件对应的开始时间和结束时间，
     ##patient_time：病人名字
     ##start2end_time_list：事件的起始时间
     # patient_name = '周波'
-    edf_path = "../polysomnography/edfs/shhs1/shhs1-200002.edf"
-    start2end_time_list = [13, 30]
+    edf_path = "../polysomnography/edfs/shhs1/shhs1-200087.edf"
+    start2end_time_list = [193, 226]
     # EDF.plotPatientSpO2(patient_name, start2end_time_list, show_event=1)
-    # EDF.plotPatientSpO2(edf_path, start2end_time_list, data_type, show_event=1)
+    # Plotting the SpO2 of the patient.
+    EDF.plotPatientSpO2(edf_path, start2end_time_list, data_type, show_event=1)
 
 
 if __name__ == '__main__':
-    # with plt.style.context(['science']):
-    main()
+    with plt.style.context(['science']):
+        # with plt.style.context(['seaborn']):
+        main()

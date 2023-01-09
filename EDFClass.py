@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+import seaborn as sns
 from scipy.signal import find_peaks
 import time
 
@@ -22,7 +23,6 @@ class EDFClass():
         post-processing: save results to .csv
         visulization: plot edf without/with events.
         """
-        pass
 
     def basic_config(self,
                      patients_folder,
@@ -43,6 +43,8 @@ class EDFClass():
             self.timeMark = time.strftime("%Y-%m-%d %H:%M:%S")
         os.makedirs(pic_folder, exist_ok=True)
         os.makedirs(SpO2_CSV_folder, exist_ok=True)
+        #初始化log
+        self.setup_logging()
 
     def nsrr_config(self, xml_files_home, edf_files_home):
         """NSRR数据的xml和edf主目录"""
@@ -81,7 +83,10 @@ class EDFClass():
 
         ch_names = raw.ch_names
         SpO2_chs = ["SpO2", "SaO2"]
-        Flow_chs = ["Flow Patient-1", "NEW AIR", "AIRFLOW"]
+        Flow_chs = [
+            "Flow Patient-1", "NEW AIR", "AIRFLOW", "AUX", "AIRFLOW-0",
+            "NEWAIR"
+        ]
         for SpO2_ch in SpO2_chs:
             if SpO2_ch in ch_names:
                 channel_SpO2 = SpO2_ch
@@ -412,13 +417,12 @@ class EDFClass():
 
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
         ax1.plot(self.timeline[idx1:idx2], self.Flow[idx1:idx2], color='blue')
-
         ax1.set_ylabel('Flow', color='blue', fontweight='bold')
         #####
         ax2.plot(self.timeline[idx1:idx2], self.SpO2[idx1:idx2], color='red')
 
         ax2.set_xlabel('time(s)', fontweight='bold')
-        ax2.set_ylabel('SpO2(%)', color='red', fontweight='bold')
+        ax2.set_ylabel('SpO2(\%)', color='red', fontweight='bold')
         ax2.tick_params(axis='y', labelcolor='tab:red')
 
         if show_event:  # 是否展示事件相关的文字信息
@@ -462,7 +466,7 @@ class EDFClass():
             pic_dir = os.path.join(
                 '.', self.pic_folder,
                 f'{patient_name}startTime={start_time}_endTime={end_time}.png')
-        plt.savefig(pic_dir, dpi=200)
+        plt.savefig(pic_dir, dpi=400)
         print(f'event pic saved in {pic_dir}')
         plt.close()
 
@@ -559,15 +563,13 @@ class EDFClass():
             SpO2Area.append(Area)
 
         df['氧减面积'] = SpO2Area
-        df['氧减面积总和(%·s)'] = df['氧减面积'].sum()
+        df['氧减面积总和(%·s)'] = round(df['氧减面积'].sum(), 2)
         df.sort_values(by='Start', inplace=True)
         return df
 
     def computeSpO2(self, pattern, data_type):
         ##计算SpO2，默认计算所有病人
         ##可以指定计算某个病人
-        #初始化log
-        self.setup_logging()
         #更新病人名单
         if data_type == "ruijin":
             infoList = self.edf_file_info_list()
@@ -600,7 +602,7 @@ class EDFClass():
                 logging.info(
                     f'index={patient_order:^3} patient {patient_name:^6}')
                 logging.info(f'record time: {self.start_record_date}')
-                logging.info('氧减面积求和: {:.3f}(%·s)'.format(
+                logging.info('氧减面积求和: {:.2f}(%·s)'.format(
                     df_update['氧减面积'].sum()))
                 logging.info('睡眠总时长: %s\n' %
                              self.stand_fmt_time(self.timeline[-1]))
@@ -629,28 +631,32 @@ class EDFClass():
                 xml_filename = edf_prefix + "-nsrr.xml"
                 edf_file_path = os.path.join(self.edf_files_home, edf_filename)
                 xml_file_path = os.path.join(self.xml_files_home, xml_filename)
-                self.parse_edf(edf_file_path)
-                df = self.parse_csv(xml_file_path, data_type)
-                if not self.load_ok:
-                    logging.info(f"{edf_file_path} file not found\n")
-                print(f"edf: {edf_filename}")
-                df_update = self._computeSpO2(df)
+                try:
+                    self.parse_edf(edf_file_path)
+                    df = self.parse_csv(xml_file_path, data_type)
+                    if not self.load_ok:
+                        logging.info(f"{edf_file_path} file not found\n")
+                    print(f"edf: {edf_filename}")
+                    df_update = self._computeSpO2(df)
 
-                logging.info(f'index: {idx:^3} edf: {edf_prefix:^8}')
-                logging.info(f'record time: {self.start_record_date}')
-                logging.info('氧减面积求和: {:.3f}(%·s)'.format(
-                    df_update['氧减面积'].sum()))
-                logging.info('睡眠总时长: %s\n' %
-                             self.stand_fmt_time(self.timeline[-1]))
+                    logging.info(f'index: {idx:^3} edf: {edf_prefix:^8}')
+                    logging.info(f'record time: {self.start_record_date}')
+                    logging.info('氧减面积求和: {:.2f}(%·s)'.format(
+                        df_update['氧减面积'].sum()))
+                    logging.info('睡眠总时长: %s\n' %
+                                 self.stand_fmt_time(self.timeline[-1]))
 
-                ###保存csv
-                subfolder = edf_prefix[:5]  # shhs1 shhs2
-                nsrr_csv_home = os.path.join(self.SpO2_CSV_folder, subfolder)
-                os.makedirs(nsrr_csv_home, exist_ok=True)
-                csv_to_spo2 = os.path.join(nsrr_csv_home,
-                                           f'{edf_prefix}_desaturation.csv')
-                df_update.to_csv(csv_to_spo2, encoding='utf_8_sig')
-
+                    ###保存csv
+                    subfolder = edf_prefix[:5]  # shhs1 shhs2
+                    nsrr_csv_home = os.path.join(self.SpO2_CSV_folder,
+                                                 subfolder)
+                    os.makedirs(nsrr_csv_home, exist_ok=True)
+                    csv_to_spo2 = os.path.join(
+                        nsrr_csv_home, f'{edf_prefix}_desaturation.csv')
+                    df_update.to_csv(csv_to_spo2, encoding='utf_8_sig')
+                except Exception as e:
+                    logging.info(f'index: {idx:^3} edf: {edf_prefix:^8}')
+                    logging.info(f'Error: {e}\n')
             # my_annot = mne.Annotations(
             #     onset=df['开始时间'].tolist(),  # in seconds
             #     duration=df['持续时间'].tolist(),  # in seconds, too
@@ -661,30 +667,109 @@ class EDFClass():
             # # Duration=raw.annotations.duration
             # # End=Start+Duration
 
-    def overallCSV(self):
+    def overallCSV(self, data_type="ruijin"):
         ##汇总所有patient的计算结果保存到overall_timeMark.csv
-        subfolder = os.path.join('.', self.SpO2_CSV_folder)
-        resultList = []
-        for home, dir, files in os.walk(subfolder):
-            for file in sorted(files):
-                # print(home, dir, file)
-                filename = re.findall('(.*?)_desaturation.csv', file)
-                if filename:
-                    tmpRes = {}
-                    patient_name = filename[0]
-                    file_dir = os.path.join(subfolder, file)
-                    df = pd.read_csv(file_dir, encoding="utf-8")
-                    tmpRes['姓名'] = patient_name
-                    tmpRes['氧减面积总和(%·s)'] = round(df.loc[0]['氧减面积总和(%·s)'], 2)
-                    resultList.append(tmpRes)
-                else:
-                    continue
-        if not resultList:
-            print('没有找到*desaturation.csv文件')
-            return
+        if data_type == "ruijin":
+            subfolder = os.path.join('.', self.SpO2_CSV_folder)
+            resultList = []
+            for home, dir, files in os.walk(subfolder):
+                for file in sorted(files):
+                    # print(home, dir, file)
+                    filename = re.findall('(.*?)_desaturation.csv', file)
+                    if filename:
+                        tmpRes = {}
+                        patient_name = filename[0]
+                        file_dir = os.path.join(subfolder, file)
+                        df = pd.read_csv(file_dir, encoding="utf-8")
+                        tmpRes['姓名'] = patient_name
+                        tmpRes['氧减面积总和(%·s)'] = round(df.loc[0]['氧减面积总和(%·s)'],
+                                                      2)
+                        resultList.append(tmpRes)
+                    else:
+                        continue
+            if not resultList:
+                print('没有找到*desaturation.csv文件')
+                return
 
-        newdf = pd.DataFrame(resultList)
-        resDir = os.path.join('.', self.SpO2_CSV_folder,
-                              f'[0]汇总{len(resultList)}人计算结果.csv')
-        newdf.to_csv(resDir, encoding="utf_8_sig", index=True)
-        print(f'final overall-result saved in {resDir}')
+            newdf = pd.DataFrame(resultList)
+            resDir = os.path.join('.', self.SpO2_CSV_folder,
+                                  f'[0]汇总{len(resultList)}人计算结果.csv')
+            newdf.to_csv(resDir, encoding="utf_8_sig", index=True)
+            print(f'final overall-result saved in {resDir}')
+
+        if data_type == "nsrr":
+
+            subfolder = "shhs1"
+            nsrr_csv_home = os.path.join(self.SpO2_CSV_folder, subfolder)
+
+            result_list = []
+            for files in sorted(os.listdir(nsrr_csv_home)):
+                csv_path = os.path.join(nsrr_csv_home, files)
+                csv_name = files[:12]
+                df = pd.read_csv(csv_path, encoding="utf-8")
+                temp_row = {}
+                temp_row['File'] = csv_name
+                temp_row['氧减面积总和(%·s)'] = round(df.loc[0]['氧减面积总和(%·s)'], 2)
+                detail_tags = [
+                    "Hypopnea", "Obstructive Apnea", "Central Apnea",
+                    "Mixed Apnea"
+                ]
+                for tag in detail_tags:
+                    temp_row[tag] = round(df.loc[0][tag], 2)
+
+                result_list.append(temp_row)
+            newdf = pd.DataFrame(result_list)
+            resDir = os.path.join(
+                '.', nsrr_csv_home,
+                f'[0]汇总{subfolder}总计{len(result_list)}人计算结果.csv')
+            newdf.to_csv(resDir, encoding="utf_8_sig", index=True)
+            print(f'final overall-result saved in {resDir}')
+
+    def add_detail_result(self):
+        """
+        nsrr数据库，根据事件细分种类，统计计算结果，保存为csv
+        """
+
+        # details_tags = [
+        # "Hypopnea", "Obstructive Apnea", "Central Apnea", "Mixed Apnea"
+
+        cal_home = "."
+        subfolder = "shhs1"
+        SpO2_CSV_folder = "SpO2Area"
+        nsrr_csv_home = os.path.join(cal_home, SpO2_CSV_folder, subfolder)
+
+        for files in sorted(os.listdir(nsrr_csv_home)):
+            details_dict = {
+                'Hypopnea|Hypopnea': 0,
+                'Obstructive apnea|Obstructive Apnea': 0,
+                'Central apnea|Central Apnea': 0,
+                'Mixed apnea|Mixed Apnea': 0
+            }
+
+            print(f"\r {files}", end='')
+
+            csv_path = os.path.join(nsrr_csv_home, files)
+            df = pd.read_csv(csv_path, encoding="utf-8")
+            for row in range(df.shape[0]):
+                eventName = df.loc[row]['EventConcept']
+                if self.checkEventName(eventName):
+                    details_dict[eventName] += df.loc[row]["氧减面积"]
+            for tag in list(details_dict.keys()):
+                df[self.key_map(tag)] = round(details_dict[tag], 2)
+
+            # new_nsrr_csv_home = os.path.join(cal_home, SpO2_CSV_folder,
+            #                                  subfolder + "-new")
+            # new_csv_path = os.path.join(new_nsrr_csv_home, files)
+            df.to_csv(csv_path, encoding="utf_8_sig")
+
+    def key_map(self, key):
+        """
+        xml呼吸事件关键字映射
+        """
+        map_dict = {
+            'Hypopnea|Hypopnea': "Hypopnea",
+            'Obstructive apnea|Obstructive Apnea': "Obstructive Apnea",
+            'Central apnea|Central Apnea': "Central Apnea",
+            'Mixed apnea|Mixed Apnea': "Mixed Apnea"
+        }
+        return map_dict[key]
